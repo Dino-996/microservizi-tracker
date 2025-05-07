@@ -15,7 +15,7 @@ app.get('/', (req, res) => {
   res.sendFile(__dirname + '/views/index.html')
 });
 
-// Schemi e definizioni
+// Schema e definizione User
 const userSchema = new mongoose.Schema({
   username: { type: String, required: true }
 });
@@ -58,28 +58,39 @@ app.post('/api/users/:_id/exercises', async function (req, res) {
   const { description, duration, date } = req.body;
 
   let validDate;
-
+  
   if (date) {
     validDate = new Date(date);
   } else {
     validDate = new Date();
   }
-
+  
   const dateString = validDate.toDateString();
 
   try {
     const user = await User.findById(_id);
-
+    
     if (!user) {
       return res.status(404).json({ error: "User not found" });
     }
-
-    const logData = { user: user._id, description: description, duration: Number(duration), date: dateString };
-
+    
+    const logData = {
+      user: user._id,
+      description: description,
+      duration: Number(duration),
+      date: dateString
+    };
+    
     const newLog = new Log(logData);
     await newLog.save();
-
-    res.json({ _id: user._id, username: user.username, date: dateString, duration: Number(duration), description: description });
+    
+    res.json({ 
+      _id: user._id, 
+      username: user.username, 
+      date: dateString, 
+      duration: Number(duration), 
+      description: description 
+    });
 
   } catch (error) {
     console.error(error);
@@ -91,41 +102,66 @@ app.post('/api/users/:_id/exercises', async function (req, res) {
 app.get('/api/users/:_id/logs', async function (req, res) {
   const _id = req.params._id;
   const { from, to, limit } = req.query;
-
+  
   try {
     const user = await User.findById(_id);
-
+    
     if (!user) {
       return res.status(404).json({ error: "User not found" });
     }
-
+    
+    // Costruisco il filtro per la query
     let filter = { user: _id };
-
+    
+    // Gestisco i parametri from e to per filtrare per date
     if (from || to) {
-      filter.date = {};
-
+      let dateFilter = {};
+      
       if (from) {
+        // Creo un oggetto Date dal formato yyyy-mm-dd
         const fromDate = new Date(from);
-        filter.date.$gte = fromDate.toDateString();
+        if (!isNaN(fromDate.getTime())) {
+          dateFilter.$gte = fromDate.toDateString();
+        }
       }
-
+      
       if (to) {
+        // Creo un oggetto Date dal formato yyyy-mm-dd
         const toDate = new Date(to);
-        filter.date.$lte = toDate.toDateString();
+        if (!isNaN(toDate.getTime())) {
+          dateFilter.$lte = toDate.toDateString();
+        }
+      }
+      
+      // Aggiungo il filtro delle date solo se valido
+      if (Object.keys(dateFilter).length > 0) {
+        filter.date = dateFilter;
       }
     }
-
+    
+    // Eseguo la query
     let query = Log.find(filter);
-
-    if (limit) {
+    
+    // Applico il limite se specificato
+    if (limit && !isNaN(Number(limit))) {
       query = query.limit(Number(limit));
     }
-
+    
     const logs = await query.exec();
-
-    const formattedLogs = logs.map(log => ({ description: log.description, duration: log.duration, date: log.date }));
-
-    res.json({ _id: user._id, username: user.username, count: logs.length, log: formattedLogs });
+    
+    // Formatto la risposta
+    const formattedLogs = logs.map(log => ({
+      description: log.description,
+      duration: log.duration,
+      date: log.date
+    }));
+    
+    res.json({
+      _id: user._id,
+      username: user.username,
+      count: logs.length,
+      log: formattedLogs
+    });
 
   } catch (error) {
     console.error(error);
