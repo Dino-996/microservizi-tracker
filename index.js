@@ -15,7 +15,6 @@ app.get('/', (req, res) => {
   res.sendFile(__dirname + '/views/index.html')
 });
 
-// Schema e definizione User
 const userSchema = new mongoose.Schema({
   username: { type: String, required: true }
 });
@@ -29,7 +28,6 @@ const logSchema = new mongoose.Schema({
 });
 const Log = mongoose.model('Log', logSchema);
 
-// 2
 app.post('/api/users', async function (req, res) {
   const username = req.body.username;
 
@@ -42,7 +40,6 @@ app.post('/api/users', async function (req, res) {
   }
 });
 
-// 3, 4, 5
 app.get('/api/users', async function (req, res) {
   try {
     const users = await User.find({}, '_id username');
@@ -52,15 +49,17 @@ app.get('/api/users', async function (req, res) {
   }
 });
 
-// 6, 7, 8
 app.post('/api/users/:_id/exercises', async function (req, res) {
   const _id = req.params._id;
   const { description, duration, date } = req.body;
 
   let validDate;
   
-  if (date) {
+  if (date && date !== '') {
     validDate = new Date(date);
+    if (isNaN(validDate.getTime())) {
+      validDate = new Date();
+    }
   } else {
     validDate = new Date();
   }
@@ -98,7 +97,6 @@ app.post('/api/users/:_id/exercises', async function (req, res) {
   }
 });
 
-// 9
 app.get('/api/users/:_id/logs', async function (req, res) {
   const _id = req.params._id;
   const { from, to, limit } = req.query;
@@ -110,46 +108,61 @@ app.get('/api/users/:_id/logs', async function (req, res) {
       return res.status(404).json({ error: "User not found" });
     }
     
-    // Costruisco il filtro per la query
     let filter = { user: _id };
     
-    // Gestisco i parametri from e to per filtrare per date
     if (from || to) {
       let dateFilter = {};
       
       if (from) {
-        // Creo un oggetto Date dal formato yyyy-mm-dd
         const fromDate = new Date(from);
         if (!isNaN(fromDate.getTime())) {
-          dateFilter.$gte = fromDate.toDateString();
+          dateFilter.$gte = fromDate;
         }
       }
       
       if (to) {
-        // Creo un oggetto Date dal formato yyyy-mm-dd
         const toDate = new Date(to);
         if (!isNaN(toDate.getTime())) {
-          dateFilter.$lte = toDate.toDateString();
+          dateFilter.$lte = toDate;
         }
       }
       
-      // Aggiungo il filtro delle date solo se valido
       if (Object.keys(dateFilter).length > 0) {
-        filter.date = dateFilter;
+        filter.date = {
+          $exists: true 
+        };
       }
     }
     
-    // Eseguo la query
-    let query = Log.find(filter);
+    let logs = await Log.find(filter);
     
-    // Applico il limite se specificato
-    if (limit && !isNaN(Number(limit))) {
-      query = query.limit(Number(limit));
+    if (from || to) {
+      logs = logs.filter(log => {
+        const logDate = new Date(log.date);
+        let passesFilter = true;
+        
+        if (from) {
+          const fromDate = new Date(from);
+          if (!isNaN(fromDate.getTime()) && logDate < fromDate) {
+            passesFilter = false;
+          }
+        }
+        
+        if (to) {
+          const toDate = new Date(to);
+          if (!isNaN(toDate.getTime()) && logDate > toDate) {
+            passesFilter = false;
+          }
+        }
+        
+        return passesFilter;
+      });
     }
     
-    const logs = await query.exec();
+    if (limit && !isNaN(Number(limit))) {
+      logs = logs.slice(0, Number(limit));
+    }
     
-    // Formatto la risposta
     const formattedLogs = logs.map(log => ({
       description: log.description,
       duration: log.duration,
@@ -159,7 +172,7 @@ app.get('/api/users/:_id/logs', async function (req, res) {
     res.json({
       _id: user._id,
       username: user.username,
-      count: logs.length,
+      count: formattedLogs.length,
       log: formattedLogs
     });
 
